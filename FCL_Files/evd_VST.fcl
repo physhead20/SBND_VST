@@ -1,0 +1,79 @@
+#include "evdservices_lariat.fcl"
+
+
+process_name: EVD
+
+services:
+{
+  TimeTracker:  {}
+  RandomNumberGenerator: {} #ART native random number generator
+  message:      @local::evd_message
+  @table::lariat_disp
+}
+
+# Define the services
+
+#Look at the input files
+source:
+{
+  module_type: RootInput
+  fileNames:  [ "data.root" ]
+  maxEvents:   -1       # Number of events to create
+  inputCommands: ["keep *_*_*_*", "drop daqAnalysis::NevisTPCMetaDatas_daq__DIGITS"]
+  #inputCommands:["keep*","drop sim::PMTHits_*_*_*"]
+}
+
+outputs:{}
+
+# Define and configure some modules to do work on each event.
+# First modules are defined; they are scheduled later.
+# Modules are grouped by type.
+physics:
+{
+
+ producers: 
+ {
+ }
+
+ filters:{}
+
+ analyzers:
+ {
+  evdisp: {module_type: EVD}
+ }
+ 
+ #list the modules for this path, order matters, filters reject all following items
+ evd: [ evdisp ] 
+ recopath: []
+}
+
+services.RawDrawingOptions.MinimumSignal: 5
+services.RawDrawingOptions.TotalTicks: 7675
+services.RecoDrawingOptions.DrawClusters: 1
+services.RecoDrawingOptions.ClusterModuleLabels: ["linecluster"]
+services.RecoDrawingOptions.HitModuleLabels: ["gaushit"]
+services.RecoDrawingOptions.DrawTracks: 1
+services.RecoDrawingOptions.DrawTrackTrajectoryPoints: 1
+services.RecoDrawingOptions.TrackModuleLabels: ["pmtrack"]
+services.RecoDrawingOptions.Draw2DEndPoints: 1
+services.RecoDrawingOptions.EndPoint2DModuleLabels: ["linecluster"]
+services.RecoDrawingOptions.DrawVertices: 1
+services.RecoDrawingOptions.VertexModuleLabels: ["pmtrack"]
+services.RawDrawingOptions.DetPedestalRetrievalAlg.DefaultCollMean:  -1
+
+services.DetectorPropertiesService.NumberTimeSamples: 7675
+services.DetectorPropertiesService.ReadOutWindowSize: 7675
+
+# Electric Field [ Drift Volume, Shield-Induction, Induction-Collection ]
+# If the wire bias is at full voltage the 
+# Shield-Induction Electric Field: 	700 V/cm
+# Induction-Collection Electric Field: 	890 V/cm
+#
+# The Drift Volume is in V/cm and should be set for the run
+# Runs 307 (10 kV Drift) 	= 207 V/cm = 0.2070
+# Runs 308 (15 kV Drift) 	= 310 V/cm = 0.3105
+# Runs 309 (20 kV Drift)	= 414 V/cm = 0.4140
+# Runs 310 - 317 (23.5 kV Drift) 	= 486.5 V/cm = 0.4865
+# Runs 322 - 330 (15 kV Drift) 	= 310 V/cm = 0.3105
+
+services.DetectorPropertiesService.Efield: [0.3105,0.700,0.890]

@@ -1,0 +1,256 @@
+#include "services_lariat.fcl"
+#include "caldata_lariat.fcl"
+#include "hitfindermodules_lariat.fcl"
+#include "lariatclustermodules.fcl"
+#include "trackfindermodules.fcl"
+#include "calorimetry_lariat.fcl"
+#include "particleid.fcl"
+#include "showerreco3d.fcl"
+#include "showerquality.fcl"
+#include "lariat_reco_algs.fcl"
+#include "lariatbeamlinereco.fcl"
+#include "services_lariat.fcl"
+#include "lariatcheckmodules.fcl"
+#include "triggeralgo_service.fcl"
+#include "lariatanamodules.fcl"
+#include "cluster_lariat.fcl"
+#include "showerfindermodules.fcl"
+##include "pandoramodules.fcl"
+#include "WC2TPCParamConfig.fcl"                                                                                                                                                   
+##include "resourcetracking_services.fcl"
+ 
+process_name: Reco2D
+
+services:
+{
+  # Load the service that manages root files for histograms.
+  TFileService: { fileName: "anaTree_histo.root" }
+ #@table::standard_resourcetrackers
+  RandomNumberGenerator: {} #ART native random number generator
+  #message:      @local::lariat_message_services
+  @table::lariat_services_run2
+}
+services.DatabaseUtil.ShouldConnect: false
+services.scheduler.SkipEvent: [ ProductNotFound ]
+#source is now a root file
+
+#services.DetectorPropertiesService.NumberTimeSamples: 6144
+#services.DetectorPropertiesService.ReadOutWindowSize: 6144
+
+services.DetectorPropertiesService.NumberTimeSamples: 7675
+services.DetectorPropertiesService.ReadOutWindowSize: 7675
+
+# Electric Field [ Drift Volume, Shield-Induction, Induction-Collection ]
+# If the wire bias is at full voltage the 
+# Shield-Induction Electric Field: 	700 V/cm
+# Induction-Collection Electric Field: 	890 V/cm
+#
+# The Drift Volume is in V/cm and should be set for the run
+# Runs 307 (10 kV Drift) 	= 207 V/cm = 0.2070
+# Runs 308 (15 kV Drift) 	= 310 V/cm = 0.3105
+# Runs 309 (20 kV Drift)	= 414 V/cm = 0.4140
+# Runs 310 - 317 (23.5 kV Drift) 	= 486.5 V/cm = 0.4865
+# Runs 322 - 330 (15 kV Drift) 	= 310 V/cm = 0.3105
+
+services.DetectorPropertiesService.Efield: [0.4865,0.700,0.890]
+
+source:
+{
+  module_type: RootInput
+  maxEvents:  -1        # Number of events to create
+  inputCommands: ["keep *_*_*_*", "drop daqAnalysis::NevisTPCMetaDatas_daq__DIGITS"]
+}
+
+
+tpcreco: [ caldata,
+           gaushit,
+           linecluster,
+           trajcluster,
+           pmtrack,
+           pmtracktc,
+           calo,
+           pid
+           ]
+# Define and configure some modules to do work on each event.
+# First modules are defined; they are scheduled later.
+# Modules are grouped by type.
+physics:
+{
+
+ producers:
+ {
+  ### calwire producers ###
+  caldata:              @local::lariat_calroi
+
+  ### hit-finder producers ###
+  gaushit:             @local::lariat_gaushitfinder
+
+  ### cluster-finder producers
+  linecluster:          @local::standard_linecluster
+  trajcluster:          @local::lariat_trajcluster_data
+
+  ### track-finder producers
+  pmtrack:              @local::standard_pmalgtrackmaker
+  pmtracktc:            @local::standard_pmalgtrackmaker
+ 
+  ### calorimetry and pid
+  calo:                 @local::lariat_calodata
+  pid:                  @local::standard_chi2pid
+
+
+ }
+ analyzers:
+{
+ anatree: @local::lariat_anatree
+
+}
+
+ #define the producer and filter modules for this path, order matters, 
+ #filters reject all following items.  see lines starting physics.producers below
+ reco: [@sequence::tpcreco ]
+	  
+ ana: [ anatree ]
+
+ #define the output stream, there could be more than one if using filters 
+ stream1:  [ out1 ]
+
+ #trigger_paths is a keyword and contains the paths that modify the art::event, 
+ #ie filters and producers
+ trigger_paths: [reco] 
+
+ #end_paths is a keyword and contains the paths that do not modify the art::Event, 
+ #ie analyzers and output streams.  these all run simultaneously
+ end_paths:     [ana,stream1]  
+}
+
+#block to define where the output goes.  if you defined a filter in the physics
+#block and put it in the trigger_paths then you need to put a SelectEvents: [XXX]
+#entry in the output stream you want those to go to, where XXX is the label of the filter module(s)
+outputs:
+{
+ out1:
+ {
+   module_type: RootOutput
+   #fileName:    "%ifb_%tc_reco2D.root"
+   fileName:    "%ifb_Reco2d.root"
+   dataTier:    "reconstructed-2d"
+   compressionLevel: 1
+ }
+}
+
+
+### Here, we overwrite ALL module labels with the ones defined above.
+
+physics.producers.caldata.DigitModuleLabel:                     "daq"
+physics.producers.caldata.DodQdxCalib:                          false
+
+physics.producers.gaushit.CalDataModuleLabel:                   "caldata"
+physics.producers.gaushit.Chi2NDFRetry:                          1000.
+
+
+physics.producers.linecluster.HitFinderModuleLabel: "gaushit"
+physics.producers.linecluster.ClusterCrawlerAlg.NumPass: 3      # Number of passes through the hit collection
+physics.producers.linecluster.ClusterCrawlerAlg.MaxHitsFit: [100, 10, 3] # Max number of hits fit in each pass
+physics.producers.linecluster.ClusterCrawlerAlg.MinHits:    [ 80,  8, 3] # Minimum number of hits required
+physics.producers.linecluster.ClusterCrawlerAlg.MinWirAfterSkip: [ 10,  3, 2] # Min number of hits after skipping a gap
+physics.producers.linecluster.ClusterCrawlerAlg.NHitsAve:    [ 10,  6, 2] # Number of hits for finding average hit charge
+physics.producers.linecluster.ClusterCrawlerAlg.ChgCut:     [2, 4, 8] # Max fractional charge allowed for adding hits
+physics.producers.linecluster.ClusterCrawlerAlg.ChiCut:   [4, 8, 10]  # Max fit chisq for clusters
+physics.producers.linecluster.ClusterCrawlerAlg.MaxWirSkip:   [20, 4, 0] # Max number of wires to skip while crawling
+physics.producers.linecluster.ClusterCrawlerAlg.KinkChiRat: [1.2, 1.2, 2] # (1st cut) Max fit chisq ratio for identifying a kink
+#physics.producers.linecluster.ClusterCrawlerAlg.KinkAngCut: [0.2, 0.4, 1.5] # (2nd cut) Max kink angle
+physics.producers.linecluster.ClusterCrawlerAlg.KinkAngCut: [0.2, 0.2, 0.3] # (2nd cut) Max kink angle
+physics.producers.linecluster.ClusterCrawlerAlg.DoMerge: [false, true, true] # Merge clusters on pass?
+physics.producers.linecluster.ClusterCrawlerAlg.TimeDelta: [8, 8, 20] # mMx tick difference at intersection for merging clusters
+physics.producers.linecluster.ClusterCrawlerAlg.MergeChgCut: [0.8, 0.8, 0.8] # Max charge ratio difference for merging clusters
+physics.producers.linecluster.ClusterCrawlerAlg.FindVertices: [true, true, true] # Find vertices on each pass?
+physics.producers.linecluster.ClusterCrawlerAlg.LACrawl: [true, true, true] # Crawl Large Angle clusters on each pass?
+physics.producers.linecluster.ClusterCrawlerAlg.LAClusAngleCut: 45  # Angle (degrees) for using Large Angle crawling code
+physics.producers.linecluster.ClusterCrawlerAlg.LAClusMaxHitsFit: 4 # Max number of hits
+physics.producers.linecluster.ClusterCrawlerAlg.MinHitFrac: 0.6 # Discard clusters with fraction of (numHits/numWires) < value
+physics.producers.linecluster.ClusterCrawlerAlg.MinAmp: [5,5] # Min signal amplitude for merging clusters and cluster-vtx associations
+physics.producers.linecluster.ClusterCrawlerAlg.HitMergeChiCut: 2.5 # Max hit separation chisq to make hits available for merging
+physics.producers.linecluster.ClusterCrawlerAlg.MergeOverlapAngCut: 0.1 # max angle difference (radians) for merging overlap clusters
+physics.producers.linecluster.ClusterCrawlerAlg.ChkClusterDS: true # Extend clusters DownStream after creating them?
+physics.producers.linecluster.ClusterCrawlerAlg.VtxClusterSplit: true # Split clusters that cross a 2D vertex?
+physics.producers.linecluster.ClusterCrawlerAlg.FindStarVertices: true # Find 2D vertices with a star topology
+physics.producers.linecluster.ClusterCrawlerAlg.FindHammerClusters: true # Find 2D vertices with a hammer topology
+physics.producers.linecluster.ClusterCrawlerAlg.FindVLAClusters: false # Find Very Large Angle clusters
+physics.producers.linecluster.ClusterCrawlerAlg.RefineVertexClusters: false # Refine vertices and clusters after creating them
+physics.producers.linecluster.ClusterCrawlerAlg.HitErrFac: 0.2  # Fraction of hit RMS to calculate cluster fit chisq
+physics.producers.linecluster.ClusterCrawlerAlg.AllowNoHitWire: 3 # Allow skipping wires that have no signal
+physics.producers.linecluster.ClusterCrawlerAlg.Vertex2DCut: 10 # Chisq cut for making 2D vertices
+physics.producers.linecluster.ClusterCrawlerAlg.Vertex2DWireErrCut: 5 # Reject 3D vertices if wire error too large (wires)
+physics.producers.linecluster.ClusterCrawlerAlg.Vertex3DCut: 3 # Chisq cut for making 3D vertices
+
+physics.producers.linecluster.ClusterCrawlerAlg.DebugPlane: -1
+physics.producers.linecluster.ClusterCrawlerAlg.DebugWire:  0
+physics.producers.linecluster.ClusterCrawlerAlg.DebugHit: 0
+
+physics.producers.trajcluster.TrajClusterAlg.FillTruth: 0
+physics.producers.trajcluster.TrajClusterAlg.StudyMode: false
+physics.producers.trajcluster.TrajClusterAlg.DebugPlane:     -1
+physics.producers.trajcluster.TrajClusterAlg.DebugWire:       0
+physics.producers.trajcluster.TrajClusterAlg.DebugTick:       0
+physics.producers.trajcluster.TrajClusterAlg.DebugWorkID:     0
+
+
+
+physics.producers.pmtrack.ClusterModuleLabel: "linecluster"
+physics.producers.pmtrack.HitModuleLabel:     "linecluster"
+physics.producers.pmtrack.PMAlgTracking.MinSeedSize2ndPass: 3
+physics.producers.pmtrack.PMAlgTracking.FlipToBeam: true
+physics.producers.pmtrack.PMAlgTracking.RunVertexing: true
+
+physics.producers.pmtracktc.ClusterModuleLabel: "trajcluster"
+physics.producers.pmtracktc.HitModuleLabel:     "gaushit"
+physics.producers.pmtracktc.PMAlgTracking.MinSeedSize2ndPass: 3
+physics.producers.pmtracktc.PMAlgTracking.FlipToBeam: true
+physics.producers.pmtracktc.PMAlgTracking.RunVertexing: true
+
+#services.SignalShapingServiceT1034.ScaleNegativeResponse: [3, 1]
+#services.SignalShapingServiceT1034.ScaleResponseTime: [0.98, 0.98]
+#services.SignalShapingServiceT1034.UseHistogramFieldShape: true
+physics.producers.calo.TrackModuleLabel:      "pmtrack"
+physics.producers.calo.SpacePointModuleLabel: "pmtrack"
+physics.producers.calo.UseArea:               "true"
+physics.producers.pid.TrackModuleLabel:       "pmtrack"
+physics.producers.calo.CaloAlg.CalAreaConstants: [0.0247,0.048]
+
+
+physics.analyzers.anatree.HitsModuleLabel: "gaushit"
+
+
+
+#services.message.destinations :
+#{
+#  STDCOUT:
+#  {
+#     type:      "cout"      #tells the message service to output this destination to cout
+#     threshold: "WARNING"   #tells the message service that this destination applies to WARNING and higher level messages
+#     append:     true       #says to append all messages to the output
+#     categories:
+#     {
+#       ChannelFilter:
+#       {
+#         limit: 0
+#         reportEvery: 0
+#       }
+#       TrackStitcher:
+#       {
+#         limit: 0
+#         reportEvery: 0
+#       }
+#       CRHitRemoval:
+#       {
+#         limit: 0
+#         reportEvery: 0
+#       }
+#       default:
+#       {
+#         limit: -1  #don't print anything at the infomsg level except the explicitly named categories
+#         reportEvery: 1
+#       }
+#     }
+#  }
+#}
