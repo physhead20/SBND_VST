@@ -1,4 +1,5 @@
 ROOTFILES/*.root
+Analysis_Macros/*.root
 ## Core latex/pdflatex auxiliary files:
 *.aux
 *.lof
